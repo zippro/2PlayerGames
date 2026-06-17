@@ -7,7 +7,7 @@
   "use strict";
   var DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   var canvas = null, ctx = null, dpr = 1, running = false;
-  var particles = [], burns = [], last = 0, TRACE_LIFE = 0.3;
+  var particles = [], burns = [], last = 0, TRACE_LIFE = 0.36;
   var sparkTrail = []; // shared trail for spark() calls
   var clipRect = null; // {x, y, w, h} in screen coords — restrict rendering
 
@@ -35,13 +35,13 @@
       var back = 24 + Math.random() * 44, smoke = Math.random() < 0.5;
       particles.push({ x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6,
         vx: -dir[0] * back + (Math.random() - 0.5) * 20, vy: -dir[1] * back + (Math.random() - 0.5) * 20 - 8,
-        g: 30, life: 0.5 + Math.random() * 0.5, max: 1, size: 0.8 + Math.random() * 1.2,
+        g: 30, life: 0.38 + Math.random() * 0.35, max: 1, size: 0.8 + Math.random() * 1.2,
         col: smoke ? [46, 43, 58] : [28, 26, 40] });
     } else {
       var b2 = 26 + Math.random() * 40;
       particles.push({ x: x + (Math.random() - 0.5) * 6, y: y + (Math.random() - 0.5) * 6,
         vx: -dir[0] * b2 + (Math.random() - 0.5) * 18, vy: -dir[1] * b2 + (Math.random() - 0.5) * 18 - 8,
-        g: 34, life: 0.34 + Math.random() * 0.32, max: 1, size: 0.6 + Math.random() * 0.9, col: [232, 158, 92] });
+        g: 34, life: 0.26 + Math.random() * 0.24, max: 1, size: 0.6 + Math.random() * 0.9, col: [232, 158, 92] });
     }
     var p = particles[particles.length - 1]; p.max = p.life;
   }
