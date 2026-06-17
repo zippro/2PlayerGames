@@ -26,7 +26,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>
-        <script src="/ignis.js?v=3" defer />
+        <script src="/ignis.js?v=4" defer />
         <TournamentProvider>
           <div className="app-container">
             {children}

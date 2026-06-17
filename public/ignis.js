@@ -7,7 +7,7 @@
   "use strict";
   var DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   var canvas = null, ctx = null, dpr = 1, running = false;
-  var particles = [], burns = [], last = 0, TRACE_LIFE = 0.6;
+  var particles = [], burns = [], last = 0, TRACE_LIFE = 0.8;
   var sparkTrail = []; // shared trail for spark() calls
 
   function initCanvas() {
@@ -123,8 +123,8 @@
     for (var sk = 1; sk < sparkTrail.length; sk++) {
       var s0 = sparkTrail[sk - 1], s1 = sparkTrail[sk], sf = 1 - s1.age / TRACE_LIFE;
       if (sf <= 0) continue;
-      ctx.strokeStyle = "rgba(44,41,56," + (0.15 * sf).toFixed(3) + ")";
-      ctx.lineWidth = 1.5 + 2.5 * sf;
+      ctx.strokeStyle = "rgba(36,33,48," + (0.4 * sf).toFixed(3) + ")";
+      ctx.lineWidth = 3 + 4 * sf;
       ctx.beginPath(); ctx.moveTo(s0.x, s0.y); ctx.lineTo(s1.x, s1.y); ctx.stroke();
     }
     // Draw particles
