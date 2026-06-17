@@ -441,6 +441,11 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
 
         // Spawn Ignis spark at tail screen position (1 per frame, subtle)
         if (eased > 0.05 && typeof window !== 'undefined' && window.Ignis) {
+          // Clip effects to board area only
+          if (window.Ignis.setClip && boardWrapRef.current) {
+            const br = boardWrapRef.current.getBoundingClientRect();
+            window.Ignis.setClip({ x: br.left, y: br.top, w: br.width, h: br.height });
+          }
           const flyArrow = arrowsRef.current.find(a => a.id === arrowId);
           if (flyArrow) {
             const escDir = getEscapeDir(flyArrow);

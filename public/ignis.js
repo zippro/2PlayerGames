@@ -9,6 +9,7 @@
   var canvas = null, ctx = null, dpr = 1, running = false;
   var particles = [], burns = [], last = 0, TRACE_LIFE = 0.3;
   var sparkTrail = []; // shared trail for spark() calls
+  var clipRect = null; // {x, y, w, h} in screen coords — restrict rendering
 
   function initCanvas() {
     if (canvas) return;
@@ -107,6 +108,13 @@
       if (sparkTrail[sp].age > TRACE_LIFE) sparkTrail.splice(sp, 1);
     }
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    // Apply clip rect if set (restrict effects to board area)
+    if (clipRect) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clipRect.x, clipRect.y, clipRect.w, clipRect.h);
+      ctx.clip();
+    }
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     // Draw burn trails
     for (var bi = 0; bi < burns.length; bi++) {
@@ -139,10 +147,13 @@
       grd.addColorStop(1, "rgba(" + cs + ",0)");
       ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(s.x, s.y, rad, 0, 6.283); ctx.fill();
     }
+    if (clipRect) ctx.restore();
     if (burns.length === 0 && particles.length === 0 && sparkTrail.length === 0) {
       running = false; ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); return;
     }
     requestAnimationFrame(loop);
   }
-  window.Ignis = { burn: burn, spark: spark, clearTrail: clearTrail };
+  /** setClip — restrict rendering to a screen rect {x, y, w, h} */
+  function setClip(rect) { clipRect = rect || null; }
+  window.Ignis = { burn: burn, spark: spark, clearTrail: clearTrail, setClip: setClip };
 })();
