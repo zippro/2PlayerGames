@@ -26,9 +26,6 @@ const SNAKE_HEAD_SPEED = 1.3;  // head leads by 30%
 const SNAKE_TAIL_SPEED = 0.7;  // tail lags by 30%
 const GAP = 0.2;               // cell gap at arrow ends
 const BLOCKER_GAP = 0.3;       // gap before blocker in blocked animation
-const IGNIS_SPAWN_RATE = 1;     // particles per frame (soft)
-const IGNIS_LIFETIME_MS = 500;  // particle lifetime
-const IGNIS_COLORS = ['#FFB347', '#FFCC80', '#FFE0B2', '#FFA726', '#FFD54F'];
 
 // ─── Persistence ───
 function loadProgress() {
@@ -197,7 +194,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const [undoUsed, setUndoUsed] = useState(false);
   const [hintArrowId, setHintArrowId] = useState(null);
   const [levelComplete, setLevelComplete] = useState(false);
-  const [extractProgress, setExtractProgress] = useState(0); // 0–1 snake anim
+
   const [introProgress, setIntroProgress] = useState(1); // 0→1 entrance anim
   const [blockedFlyId, setBlockedFlyId] = useState(null);
   const [blockedFlyProgress, setBlockedFlyProgress] = useState(0); // 0→1→2 (out then back)
@@ -214,9 +211,9 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const blockedRafRef = useRef(null);
   const shakeTimeoutRef = useRef(null);
   const clueTimeoutRef = useRef(null);
-  const smokeParticlesRef = useRef([]); // [{x, y, vx, vy, born, size, color, type}]
   const cellSizeRef = useRef(40);
   const arrowsRef = useRef([]);
+
 
   // ── Cleanup RAFs and timeouts on unmount ──
   useEffect(() => {
@@ -433,59 +430,46 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
       setFlyingId(arrowId);
       setMoveCount(m => m + 1);
 
-      // Snake extraction animation via requestAnimationFrame
-      const startTime = performance.now();
-      const duration = EXTRACT_DURATION_MS;
 
-      const animate = (now) => {
-        const elapsed = now - startTime;
-        const t = Math.min(1, elapsed / duration);
-        // Ease-out curve for natural deceleration
-        const eased = 1 - (1 - t) * (1 - t);
-        setExtractProgress(eased);
+      // Fire Ignis.burn on the arrow's SVG <g> element
+      // Ignis handles visual (fly off, char, smoke). Game logic in onDone.
+      setTimeout(() => {
+        const arrowEl = document.getElementById(`arrow-g-${arrowId}`);
+        const escDir = getEscapeDir(arrow);
+        let ignisDir;
+        if (escDir.dy < 0) ignisDir = 'up';
+        else if (escDir.dy > 0) ignisDir = 'down';
+        else if (escDir.dx < 0) ignisDir = 'left';
+        else ignisDir = 'right';
 
-        // Spawn soft ignis particles at tail position
-        const nowMs = performance.now();
-        const flyArrow = arrowsRef.current.find(a => a.id === arrowId);
-        if (flyArrow && eased > 0.02) {
-          const escDir = getEscapeDir(flyArrow);
-          const tip = flyArrow.points[flyArrow.points.length - 1];
-          const exitDist = Math.max(currentLevel.gridW, currentLevel.gridH) + 5;
-          const extPts = [...flyArrow.points];
-          extPts.push([tip[0] + escDir.dx * exitDist, tip[1] + escDir.dy * exitDist]);
-          const tLen = polylineLength(extPts);
-          const tailPos = eased * tLen;
-          const tailWorldPts = slicePolyline(extPts, tailPos, tailPos + 0.01);
-          if (tailWorldPts.length > 0) {
-            const [tx, ty] = tailWorldPts[0];
-            const cs = cellSizeRef.current || 40;
-            for (let pi = 0; pi < IGNIS_SPAWN_RATE; pi++) {
-              const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.2; // mostly upward
-              const speed = 0.15 + Math.random() * 0.3;
-              smokeParticlesRef.current.push({
-                x: tx * cs + (Math.random() - 0.5) * cs * 0.15,
-                y: ty * cs + (Math.random() - 0.5) * cs * 0.15,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - 0.3, // gentle rise
-                born: nowMs,
-                size: 1.5 + Math.random() * 2.5,
-                color: IGNIS_COLORS[Math.floor(Math.random() * IGNIS_COLORS.length)],
+        if (arrowEl && typeof window !== 'undefined' && window.Ignis) {
+          window.Ignis.burn(arrowEl, {
+            dir: ignisDir,
+            duration: EXTRACT_DURATION_MS,
+            char: true,
+            onDone: () => {
+              setFlyingId(null);
+              setArrows(prev => {
+                const remaining = prev.filter(a => a.id !== arrowId);
+                if (remaining.length === 0) {
+                  sounds.score();
+                  vibrate([20, 10, 30, 10, 20]);
+                  setLevelComplete(true);
+                  setProgress(prev2 => {
+                    const next = { ...prev2, completed: { ...prev2.completed } };
+                    next.completed[currentLevelId] = { moves: moveCount + 1, heartsLost };
+                    next.unlocked = Math.max(next.unlocked, currentLevelId + 1);
+                    saveProgress(next);
+                    return next;
+                  });
+                }
+                return remaining;
               });
-            }
-          }
-        }
-        // Prune dead particles
-        smokeParticlesRef.current = smokeParticlesRef.current.filter(
-          p => nowMs - p.born < IGNIS_LIFETIME_MS
-        );
-
-        if (t < 1) {
-          extractRafRef.current = requestAnimationFrame(animate);
+            },
+          });
         } else {
-          // Animation complete — remove arrow
-          setExtractProgress(0);
+          // Fallback: no Ignis available, just remove instantly
           setFlyingId(null);
-          smokeParticlesRef.current = []; // clear particles when done
           setArrows(prev => {
             const remaining = prev.filter(a => a.id !== arrowId);
             if (remaining.length === 0) {
@@ -503,9 +487,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
             return remaining;
           });
         }
-      };
-
-      extractRafRef.current = requestAnimationFrame(animate);
+      }, 10); // tiny delay to ensure DOM has the element
     } else {
       // ❌ Blocked — fly toward blocker, bounce back, shake, turn red
       const escDir = getEscapeDir(arrow);
@@ -656,37 +638,9 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     const color = (isShaking || isBlockedRed) ? ARROW_BLOCKED : isHint ? ARROW_HINT : ARROW_COLOR;
     const pts = arrow.points;
 
-    // ── Grid-following extraction animation ──
-    if (isFlying && extractProgress > 0) {
-      const escDir = getEscapeDir(arrow);
-      const tip = pts[pts.length - 1];
-      const exitDist = Math.max(currentLevel.gridW, currentLevel.gridH) + 5;
-      const extPoints = [...pts];
-      extPoints.push([tip[0] + escDir.dx * exitDist, tip[1] + escDir.dy * exitDist]);
-
-      const totalLen = polylineLength(extPoints);
-      const origLen = polylineLength(pts);
-      const headPos = origLen + extractProgress * (totalLen - origLen);
-      const tailPos = extractProgress * totalLen;
-      if (tailPos >= headPos) return null;
-
-      const visiblePts = slicePolyline(extPoints, tailPos, headPos);
-      if (visiblePts.length < 2) return null;
-
-      const vPts = visiblePts.map(p => [...p]);
-      insetTail(vPts);
-      insetTipForArrowhead(vPts, cs);
-      const animPathD = buildArrowPath(vPts, cs, cornerR);
-      const head = computeArrowhead(vPts, cs);
-
-      return (
-        <g key={arrow.id}>
-          <path d={animPathD} stroke={color} strokeWidth={strokeW} fill="none"
-            strokeLinecap="round" strokeLinejoin="round" />
-          <polygon points={head.points} fill={color} />
-        </g>
-      );
-    }
+    // When flying, Ignis.burn handles the visual on the normal <g> element.
+    // We skip any special flying-state rendering — the arrow stays as-is in the DOM
+    // and Ignis applies CSS transform/opacity/filter to fly it off-screen.
 
     // ── Blocked fly animation: snake lunge toward blocker, then retract ──
     if (isBlockedFlying && blockedFlyData && blockedFlyProgress > 0) {
@@ -762,6 +716,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     return (
       <g
         key={arrow.id}
+        id={`arrow-g-${arrow.id}`}
         onClick={(e) => { e.stopPropagation(); handleArrowTap(arrow.id); }}
         style={{
           cursor: introProgress >= 1 ? 'pointer' : 'default',
@@ -958,7 +913,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
       {/* Progress bar */}
       {(() => {
         const totalArrows = currentLevel.arrows.length;
-        const removed = totalArrows - arrows.length;
+        const removed = totalArrows - arrows.length + (flyingId ? 1 : 0);
         const pct = totalArrows > 0 ? (removed / totalArrows) * 100 : 0;
         return (
           <div style={{
@@ -1001,14 +956,6 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
             viewBox={`${-margin} ${-margin} ${svgW + margin * 2} ${svgH + margin * 2}`}
             style={{ overflow: 'visible' }}
           >
-            {/* SVG filters for ignis glow */}
-            <defs>
-              <radialGradient id="ignisGrad">
-                <stop offset="0%" stopColor="#FFF8E1" stopOpacity="0.9" />
-                <stop offset="40%" stopColor="#FFB347" stopOpacity="0.6" />
-                <stop offset="100%" stopColor="#FF8C00" stopOpacity="0" />
-              </radialGradient>
-            </defs>
             {/* Grid dots — only at positions occupied by arrows */}
             {[...occupiedDots].map(key => {
               const [x, y] = key.split(',').map(Number);
@@ -1020,27 +967,6 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
             })}
             {/* Arrows (rendered ON TOP of dots) */}
             {arrows.map(arrow => renderArrow(arrow))}
-            {/* Soft ignis trail during extraction */}
-            {flyingId && smokeParticlesRef.current.length > 0 && (() => {
-              const now = performance.now();
-              return smokeParticlesRef.current.map((p, i) => {
-                const age = now - p.born;
-                const lifeT = Math.min(1, age / IGNIS_LIFETIME_MS);
-                const px = p.x + p.vx * age * 0.05;
-                const py = p.y + p.vy * age * 0.05;
-                // Soft glow: starts bright, fades and grows slightly
-                const opacity = Math.max(0, 0.7 * (1 - lifeT * lifeT));
-                const scale = 1 + lifeT * 0.8;
-                return (
-                  <circle key={`ignis-${i}`}
-                    cx={px} cy={py}
-                    r={p.size * scale}
-                    fill="url(#ignisGrad)"
-                    opacity={opacity}
-                  />
-                );
-              });
-            })()}
           </svg>
         </div>
       </div>
