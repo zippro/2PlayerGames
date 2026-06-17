@@ -194,7 +194,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const [undoUsed, setUndoUsed] = useState(false);
   const [hintArrowId, setHintArrowId] = useState(null);
   const [levelComplete, setLevelComplete] = useState(false);
-
+  const [extractProgress, setExtractProgress] = useState(0);
   const [introProgress, setIntroProgress] = useState(1); // 0→1 entrance anim
   const [blockedFlyId, setBlockedFlyId] = useState(null);
   const [blockedFlyProgress, setBlockedFlyProgress] = useState(0); // 0→1→2 (out then back)
@@ -319,6 +319,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     setUndoUsed(false);
     setHintArrowId(null);
     setLevelComplete(false);
+    setExtractProgress(0);
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
     if (extractRafRef.current) cancelAnimationFrame(extractRafRef.current);
@@ -428,46 +429,55 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
       setUndoUsed(false);
       setFlyingId(arrowId);
       setMoveCount(m => m + 1);
+      // Snake extraction animation via requestAnimationFrame
+      const startTime = performance.now();
+      const duration = EXTRACT_DURATION_MS;
 
+      const animate = (now) => {
+        const elapsed = now - startTime;
+        const t = Math.min(1, elapsed / duration);
+        const eased = 1 - (1 - t) * (1 - t);
+        setExtractProgress(eased);
 
-      // Fire Ignis.burn on the arrow's SVG <g> element
-      // Ignis handles visual (fly off, char, smoke). Game logic in onDone.
-      setTimeout(() => {
-        const arrowEl = document.getElementById(`arrow-g-${arrowId}`);
-        const escDir = getEscapeDir(arrow);
-        let ignisDir;
-        if (escDir.dy < 0) ignisDir = 'up';
-        else if (escDir.dy > 0) ignisDir = 'down';
-        else if (escDir.dx < 0) ignisDir = 'left';
-        else ignisDir = 'right';
+        // Spawn Ignis spark at tail screen position (1 per frame, subtle)
+        if (eased > 0.05 && typeof window !== 'undefined' && window.Ignis) {
+          const flyArrow = arrowsRef.current.find(a => a.id === arrowId);
+          if (flyArrow) {
+            const escDir = getEscapeDir(flyArrow);
+            const tip = flyArrow.points[flyArrow.points.length - 1];
+            const exitDist = Math.max(currentLevel.gridW, currentLevel.gridH) + 5;
+            const extPts = [...flyArrow.points];
+            extPts.push([tip[0] + escDir.dx * exitDist, tip[1] + escDir.dy * exitDist]);
+            const tLen = polylineLength(extPts);
+            const tailPos = eased * tLen;
+            const tailWorldPts = slicePolyline(extPts, tailPos, tailPos + 0.01);
+            if (tailWorldPts.length > 0 && boardWrapRef.current) {
+              const [tx, ty] = tailWorldPts[0];
+              const cs = cellSizeRef.current || 40;
+              // Convert SVG coords to screen coords
+              const svg = boardWrapRef.current.querySelector('svg');
+              if (svg) {
+                const svgRect = svg.getBoundingClientRect();
+                const vb = svg.viewBox.baseVal;
+                const scaleX = svgRect.width / vb.width;
+                const scaleY = svgRect.height / vb.height;
+                const screenX = svgRect.left + (tx * cs - vb.x) * scaleX;
+                const screenY = svgRect.top + (ty * cs - vb.y) * scaleY;
+                let ignisDir;
+                if (escDir.dy < 0) ignisDir = 'up';
+                else if (escDir.dy > 0) ignisDir = 'down';
+                else if (escDir.dx < 0) ignisDir = 'left';
+                else ignisDir = 'right';
+                window.Ignis.spark(screenX, screenY, ignisDir);
+              }
+            }
+          }
+        }
 
-        if (arrowEl && typeof window !== 'undefined' && window.Ignis) {
-          window.Ignis.burn(arrowEl, {
-            dir: ignisDir,
-            duration: EXTRACT_DURATION_MS,
-            char: true,
-            onDone: () => {
-              setFlyingId(null);
-              setArrows(prev => {
-                const remaining = prev.filter(a => a.id !== arrowId);
-                if (remaining.length === 0) {
-                  sounds.score();
-                  vibrate([20, 10, 30, 10, 20]);
-                  setLevelComplete(true);
-                  setProgress(prev2 => {
-                    const next = { ...prev2, completed: { ...prev2.completed } };
-                    next.completed[currentLevelId] = { moves: moveCount + 1, heartsLost };
-                    next.unlocked = Math.max(next.unlocked, currentLevelId + 1);
-                    saveProgress(next);
-                    return next;
-                  });
-                }
-                return remaining;
-              });
-            },
-          });
+        if (t < 1) {
+          extractRafRef.current = requestAnimationFrame(animate);
         } else {
-          // Fallback: no Ignis available, just remove instantly
+          setExtractProgress(0);
           setFlyingId(null);
           setArrows(prev => {
             const remaining = prev.filter(a => a.id !== arrowId);
@@ -486,7 +496,9 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
             return remaining;
           });
         }
-      }, 10); // tiny delay to ensure DOM has the element
+      };
+
+      extractRafRef.current = requestAnimationFrame(animate);
     } else {
       // ❌ Blocked — fly toward blocker, bounce back, shake, turn red
       const escDir = getEscapeDir(arrow);
@@ -637,9 +649,37 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     const color = (isShaking || isBlockedRed) ? ARROW_BLOCKED : isHint ? ARROW_HINT : ARROW_COLOR;
     const pts = arrow.points;
 
-    // When flying, Ignis.burn handles the visual on the normal <g> element.
-    // We skip any special flying-state rendering — the arrow stays as-is in the DOM
-    // and Ignis applies CSS transform/opacity/filter to fly it off-screen.
+    // ── Grid-following extraction animation ──
+    if (isFlying && extractProgress > 0) {
+      const escDir = getEscapeDir(arrow);
+      const tip = pts[pts.length - 1];
+      const exitDist = Math.max(currentLevel.gridW, currentLevel.gridH) + 5;
+      const extPoints = [...pts];
+      extPoints.push([tip[0] + escDir.dx * exitDist, tip[1] + escDir.dy * exitDist]);
+
+      const totalLen = polylineLength(extPoints);
+      const origLen = polylineLength(pts);
+      const headPos = origLen + extractProgress * (totalLen - origLen);
+      const tailPos = extractProgress * totalLen;
+      if (tailPos >= headPos) return null;
+
+      const visiblePts = slicePolyline(extPoints, tailPos, headPos);
+      if (visiblePts.length < 2) return null;
+
+      const vPts = visiblePts.map(p => [...p]);
+      insetTail(vPts);
+      insetTipForArrowhead(vPts, cs);
+      const animPathD = buildArrowPath(vPts, cs, cornerR);
+      const head = computeArrowhead(vPts, cs);
+
+      return (
+        <g key={arrow.id}>
+          <path d={animPathD} stroke={color} strokeWidth={strokeW} fill="none"
+            strokeLinecap="round" strokeLinejoin="round" />
+          <polygon points={head.points} fill={color} />
+        </g>
+      );
+    }
 
     // ── Blocked fly animation: snake lunge toward blocker, then retract ──
     if (isBlockedFlying && blockedFlyData && blockedFlyProgress > 0) {

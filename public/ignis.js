@@ -108,5 +108,13 @@
     if (burns.length === 0 && particles.length === 0) { running = false; ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); return; }
     requestAnimationFrame(loop);
   }
-  window.Ignis = { burn: burn };
+  /** spark — spawn 1 particle at screen (x,y). No element control. */
+  function spark(x, y, dir) {
+    initCanvas();
+    if (typeof dir === "string") dir = DIRS[dir] || [0, -1];
+    if (!dir) dir = [0, -1];
+    spawnSpark(x, y, dir);
+    if (!running) { running = true; last = performance.now(); requestAnimationFrame(loop); }
+  }
+  window.Ignis = { burn: burn, spark: spark };
 })();
