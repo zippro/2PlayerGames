@@ -468,7 +468,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
                 else if (escDir.dy > 0) ignisDir = 'down';
                 else if (escDir.dx < 0) ignisDir = 'left';
                 else ignisDir = 'right';
-                window.Ignis.spark(screenX, screenY, ignisDir);
+                if (window.Ignis.spark) window.Ignis.spark(screenX, screenY, ignisDir);
               }
             }
           }
