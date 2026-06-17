@@ -6,9 +6,7 @@ import { LEVELS, canArrowEscape, getEscapeDir, getArrowCells, solve, getLegalMov
 
 // ─── Constants ───
 const PROGRESS_KEY = 'arrow-escape-progress';
-const HEARTS_KEY = 'arrow-escape-hearts';
 const MAX_HEARTS = 3;
-const HEART_REGEN_MS = 20 * 60 * 1000; // 20 minutes
 const STARTING_HINTS = 3;
 const ARROW_COLOR = '#1a1a2e';
 const ARROW_BLOCKED = '#E74C3C';
@@ -42,23 +40,7 @@ function loadProgress() {
 function saveProgress(p) {
   try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(p)); } catch {}
 }
-function loadHearts() {
-  try {
-    const d = localStorage.getItem(HEARTS_KEY);
-    if (d) {
-      const h = JSON.parse(d);
-      const now = Date.now();
-      const elapsed = now - (h.lastUpdate || now);
-      const regenCount = Math.floor(elapsed / HEART_REGEN_MS);
-      const newHearts = Math.min(MAX_HEARTS, h.count + regenCount);
-      return { count: newHearts, lastUpdate: newHearts >= MAX_HEARTS ? now : h.lastUpdate + regenCount * HEART_REGEN_MS };
-    }
-  } catch {}
-  return { count: MAX_HEARTS, lastUpdate: Date.now() };
-}
-function saveHearts(h) {
-  try { localStorage.setItem(HEARTS_KEY, JSON.stringify(h)); } catch {}
-}
+
 
 // ─── Build SVG path for arrow body ───
 // Points are in grid coordinates; maps to grid DOT positions (x*cs, y*cs)
@@ -204,7 +186,7 @@ function HeartsHUD({ hearts, maxHearts, regenTimeLeft }) {
 export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const [phase, setPhase] = useState('levelSelect');
   const [progress, setProgress] = useState(loadProgress);
-  const [heartsData, setHeartsData] = useState(loadHearts);
+  const [hearts, setHearts] = useState(MAX_HEARTS);
   const [currentLevelId, setCurrentLevelId] = useState(null);
   const [arrows, setArrows] = useState([]);
   const [flyingId, setFlyingId] = useState(null);
@@ -214,7 +196,6 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const [undoState, setUndoState] = useState(null);
   const [undoUsed, setUndoUsed] = useState(false);
   const [hintArrowId, setHintArrowId] = useState(null);
-  const [regenSeconds, setRegenSeconds] = useState(0);
   const [levelComplete, setLevelComplete] = useState(false);
   const [extractProgress, setExtractProgress] = useState(0); // 0–1 snake anim
   const [introProgress, setIntroProgress] = useState(1); // 0→1 entrance anim
@@ -268,26 +249,6 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const currentLevel = currentLevelId ? LEVELS.find(l => l.id === currentLevelId) : null;
 
 
-  // Heart regen timer
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setHeartsData(prev => {
-        if (prev.count >= MAX_HEARTS) return prev;
-        const now = Date.now();
-        const elapsed = now - prev.lastUpdate;
-        if (elapsed >= HEART_REGEN_MS) {
-          const regen = Math.floor(elapsed / HEART_REGEN_MS);
-          const newCount = Math.min(MAX_HEARTS, prev.count + regen);
-          const nd = { count: newCount, lastUpdate: newCount >= MAX_HEARTS ? now : prev.lastUpdate + regen * HEART_REGEN_MS };
-          saveHearts(nd);
-          return nd;
-        }
-        setRegenSeconds(Math.ceil((HEART_REGEN_MS - elapsed) / 1000));
-        return prev;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Resize observer
   useEffect(() => {
@@ -348,6 +309,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     setArrows(level.arrows.map(a => ({ ...a, points: a.points.map(p => [...p]) })));
     setMoveCount(0);
     setHeartsLost(0);
+    setHearts(MAX_HEARTS);
     setFlyingId(null);
     setShakeArrow(null);
     setBlockedFlyId(null);
@@ -595,12 +557,10 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
           if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
           shakeTimeoutRef.current = setTimeout(() => setShakeArrow(null), SHAKE_DURATION_MS);
 
-          setHeartsData(prev => {
-            const newCount = Math.max(0, prev.count - 1);
-            const nd = { count: newCount, lastUpdate: prev.count >= MAX_HEARTS ? Date.now() : prev.lastUpdate };
-            saveHearts(nd);
+          setHearts(prev => {
+            const newCount = Math.max(0, prev - 1);
             if (newCount === 0) setTimeout(() => setPhase('outOfHearts'), 800);
-            return nd;
+            return newCount;
           });
           return;
         }
@@ -621,11 +581,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     setMoveCount(m => Math.max(0, m - 1));
     sounds.tap();
     if (undoState.heartLost) {
-      setHeartsData(prev => {
-        const nd = { ...prev, count: Math.min(MAX_HEARTS, prev.count + 1) };
-        saveHearts(nd);
-        return nd;
-      });
+      setHearts(prev => Math.min(MAX_HEARTS, prev + 1));
       setHeartsLost(h => Math.max(0, h - 1));
     }
   }, [undoState, undoUsed, flyingId]);
@@ -849,7 +805,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
             LEVEL SELECT
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <HeartsHUD hearts={heartsData.count} maxHearts={MAX_HEARTS} regenTimeLeft={regenSeconds} />
+            <HeartsHUD hearts={hearts} maxHearts={MAX_HEARTS} regenTimeLeft={0} />
             <span style={{ fontSize: 11, fontFamily: 'var(--font-display)', color: '#999' }}>💡{progress.hints}</span>
           </div>
         </div>
@@ -864,7 +820,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
               <button key={level.id}
                 onClick={() => {
                   if (!unlocked) return;
-                  if (heartsData.count <= 0) { setPhase('outOfHearts'); return; }
+                  if (hearts <= 0) { setPhase('outOfHearts'); return; }
                   loadLevel(level.id);
                 }}
                 style={{
@@ -905,20 +861,19 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
         <div style={{ fontSize: 48 }}>💔</div>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 900 }}>OUT OF HEARTS</div>
         <div style={{ fontSize: 13, color: '#999', textAlign: 'center', maxWidth: 250, lineHeight: 1.5 }}>
-          Hearts regenerate over time.<br/>Come back in a few minutes!
+          You ran out of hearts on this level.<br/>Restart to try again!
         </div>
-        <HeartsHUD hearts={heartsData.count} maxHearts={MAX_HEARTS} regenTimeLeft={regenSeconds} />
+        <HeartsHUD hearts={hearts} maxHearts={MAX_HEARTS} regenTimeLeft={0} />
         <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
           <button onClick={() => { setPhase('levelSelect'); sounds.tap(); }} style={{
             padding: '12px 28px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)',
             borderRadius: 12, color: '#666', fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-          }}>BACK</button>
-          {heartsData.count > 0 && (
-            <button onClick={() => { setPhase('playing'); sounds.tap(); }} style={{
-              padding: '12px 28px', background: ARROW_COLOR, border: 'none', borderRadius: 12,
-              color: '#fff', fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 800, cursor: 'pointer',
-            }}>CONTINUE</button>
-          )}
+          }}>LEVELS</button>
+          <button onClick={() => { loadLevel(currentLevelId); sounds.tap(); }} style={{
+            padding: '12px 28px', background: ARROW_COLOR, border: 'none', borderRadius: 12,
+            color: '#fff', fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+            boxShadow: '0 4px 16px rgba(26,26,46,0.3)',
+          }}>RESTART LEVEL</button>
         </div>
       </div>
     );
@@ -945,7 +900,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
           Level {currentLevelId} · {moveCount} moves
           {heartsLost > 0 && ` · ${heartsLost} ❤️ lost`}
         </div>
-        <HeartsHUD hearts={heartsData.count} maxHearts={MAX_HEARTS} regenTimeLeft={0} />
+        <HeartsHUD hearts={hearts} maxHearts={MAX_HEARTS} regenTimeLeft={0} />
         <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
           <button onClick={() => { setPhase('levelSelect'); sounds.tap(); }} style={{
             padding: '12px 24px', background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)',
@@ -997,7 +952,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
             Level {currentLevelId}
           </div>
         </div>
-        <HeartsHUD hearts={heartsData.count} maxHearts={MAX_HEARTS} regenTimeLeft={regenSeconds} />
+        <HeartsHUD hearts={hearts} maxHearts={MAX_HEARTS} regenTimeLeft={0} />
       </div>
 
       {/* Progress bar */}
