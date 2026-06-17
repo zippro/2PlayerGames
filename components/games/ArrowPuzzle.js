@@ -479,6 +479,7 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
         } else {
           setExtractProgress(0);
           setFlyingId(null);
+          if (typeof window !== 'undefined' && window.Ignis && window.Ignis.clearTrail) window.Ignis.clearTrail();
           setArrows(prev => {
             const remaining = prev.filter(a => a.id !== arrowId);
             if (remaining.length === 0) {
