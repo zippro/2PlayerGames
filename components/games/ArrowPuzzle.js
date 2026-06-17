@@ -319,7 +319,6 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
     setUndoUsed(false);
     setHintArrowId(null);
     setLevelComplete(false);
-    setExtractProgress(0);
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
     if (extractRafRef.current) cancelAnimationFrame(extractRafRef.current);
