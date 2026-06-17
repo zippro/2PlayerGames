@@ -24,6 +24,8 @@ const gameComponents = {
   'slot-cars': dynamic(() => import('@/components/games/SlotCars'), { ssr: false }),
   'archery': dynamic(() => import('@/components/games/Archery'), { ssr: false }),
   'tennis': dynamic(() => import('@/components/games/Tennis'), { ssr: false }),
+  'chess': dynamic(() => import('@/components/games/Chess'), { ssr: false }),
+  'arrow-puzzle': dynamic(() => import('@/components/games/ArrowPuzzle'), { ssr: false }),
 };
 
 function GamePageContent() {
@@ -35,8 +37,9 @@ function GamePageContent() {
   const game = getGameById(gameId);
 
   // Flow: difficulty (1p) → tutorial → playing → gameover
-  // Tutorial shown at start, user taps "GOT IT" to play
-  const [phase, setPhase] = useState(mode === '1p' ? 'difficulty' : 'tutorial');
+  // Arrow puzzle manages its own phases internally, skip difficulty
+  const skipDifficulty = gameId === 'arrow-puzzle';
+  const [phase, setPhase] = useState(mode === '1p' && !skipDifficulty ? 'difficulty' : 'tutorial');
   const [difficulty, setDifficulty] = useState(null);
   const [gameResult, setGameResult] = useState(null);
   const [gameKey, setGameKey] = useState(0);
