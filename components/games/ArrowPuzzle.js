@@ -8,6 +8,7 @@ import { LEVELS, canArrowEscape, getEscapeDir, getArrowCells, solve, getLegalMov
 const PROGRESS_KEY = 'arrow-escape-progress';
 const HEARTS_KEY = 'arrow-escape-hearts';
 const MAX_HEARTS = 3;
+const HEART_REGEN_MS = 20 * 60 * 1000; // 20 minutes
 const STARTING_HINTS = 3;
 const ARROW_COLOR = '#1a1a2e';
 const ARROW_BLOCKED = '#E74C3C';
@@ -46,7 +47,11 @@ function loadHearts() {
     const d = localStorage.getItem(HEARTS_KEY);
     if (d) {
       const h = JSON.parse(d);
-      return { count: Math.min(MAX_HEARTS, h.count), lastUpdate: Date.now() };
+      const now = Date.now();
+      const elapsed = now - (h.lastUpdate || now);
+      const regenCount = Math.floor(elapsed / HEART_REGEN_MS);
+      const newHearts = Math.min(MAX_HEARTS, h.count + regenCount);
+      return { count: newHearts, lastUpdate: newHearts >= MAX_HEARTS ? now : h.lastUpdate + regenCount * HEART_REGEN_MS };
     }
   } catch {}
   return { count: MAX_HEARTS, lastUpdate: Date.now() };
@@ -263,6 +268,26 @@ export default function ArrowPuzzle({ mode, difficulty, onGameEnd }) {
   const currentLevel = currentLevelId ? LEVELS.find(l => l.id === currentLevelId) : null;
 
 
+  // Heart regen timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHeartsData(prev => {
+        if (prev.count >= MAX_HEARTS) return prev;
+        const now = Date.now();
+        const elapsed = now - prev.lastUpdate;
+        if (elapsed >= HEART_REGEN_MS) {
+          const regen = Math.floor(elapsed / HEART_REGEN_MS);
+          const newCount = Math.min(MAX_HEARTS, prev.count + regen);
+          const nd = { count: newCount, lastUpdate: newCount >= MAX_HEARTS ? now : prev.lastUpdate + regen * HEART_REGEN_MS };
+          saveHearts(nd);
+          return nd;
+        }
+        setRegenSeconds(Math.ceil((HEART_REGEN_MS - elapsed) / 1000));
+        return prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Resize observer
   useEffect(() => {
